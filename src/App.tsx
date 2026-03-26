@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
-import { Upload, Camera, Download, Scissors, Loader2 } from 'lucide-react';
+import { Upload, Camera, Download, Scissors, Loader2, Box } from 'lucide-react';
+import { uploadImage } from './lib/supabase';
 
 const HAIRSTYLES = [
   'Fade',
@@ -14,21 +15,35 @@ const HAIRSTYLES = [
 
 function App() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   const [selectedHairstyle, setSelectedHairstyle] = useState<string>('');
   const [resultImage, setResultImage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [is3DView, setIs3DView] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileSelect = (file: File) => {
+  const handleFileSelect = async (file: File) => {
     if (file && file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setSelectedImage(e.target?.result as string);
+      setIsUploading(true);
+      try {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setSelectedImage(e.target?.result as string);
+        };
+        reader.readAsDataURL(file);
+
+        const url = await uploadImage(file);
+        setUploadedImageUrl(url);
         setResultImage(null);
-      };
-      reader.readAsDataURL(file);
+      } catch (error) {
+        console.error('Upload error:', error);
+        alert('Failed to upload image. Please try again.');
+      } finally {
+        setIsUploading(false);
+      }
     }
   };
 
@@ -55,7 +70,7 @@ function App() {
   };
 
   const processHairstyle = async () => {
-    if (!selectedImage || !selectedHairstyle) return;
+    if (!uploadedImageUrl || !selectedHairstyle) return;
 
     setIsProcessing(true);
     try {
@@ -68,18 +83,24 @@ function App() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            image: selectedImage,
+            image_url: uploadedImageUrl,
             hairstyle: selectedHairstyle,
           }),
         }
       );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('API Error:', errorText);
+        throw new Error('API request failed');
+      }
 
       const data = await response.json();
 
       if (data.success && data.image_url) {
         setResultImage(data.image_url);
       } else {
-        alert('Failed to process image. Please try again.');
+        alert(data.error || 'Failed to process image. Please try again.');
       }
     } catch (error) {
       console.error('Error processing hairstyle:', error);
@@ -102,8 +123,10 @@ function App() {
 
   const resetApp = () => {
     setSelectedImage(null);
+    setUploadedImageUrl(null);
     setSelectedHairstyle('');
     setResultImage(null);
+    setIs3DView(false);
   };
 
   return (
@@ -137,20 +160,27 @@ function App() {
             >
               <div className="flex flex-col items-center gap-6">
                 <div className="w-20 h-20 rounded-full bg-amber-500/10 flex items-center justify-center">
-                  <Upload className="w-10 h-10 text-amber-500" />
+                  {isUploading ? (
+                    <Loader2 className="w-10 h-10 text-amber-500 animate-spin" />
+                  ) : (
+                    <Upload className="w-10 h-10 text-amber-500" />
+                  )}
                 </div>
 
                 <div className="text-center">
-                  <h2 className="text-2xl font-semibold mb-2">Upload Your Photo</h2>
+                  <h2 className="text-2xl font-semibold mb-2">
+                    {isUploading ? 'Uploading...' : 'Upload Your Photo'}
+                  </h2>
                   <p className="text-zinc-400">
-                    Drag and drop your photo here, or use the buttons below
+                    {isUploading ? 'Please wait while we upload your image' : 'Drag and drop your photo here, or use the buttons below'}
                   </p>
                 </div>
 
                 <div className="flex gap-4">
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-semibold rounded-lg transition-colors flex items-center gap-2"
+                    disabled={isUploading}
+                    className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-semibold rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Upload className="w-5 h-5" />
                     Choose File
@@ -158,7 +188,8 @@ function App() {
 
                   <button
                     onClick={() => cameraInputRef.current?.click()}
-                    className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 border border-amber-500/30 text-white font-semibold rounded-lg transition-colors flex items-center gap-2"
+                    disabled={isUploading}
+                    className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 border border-amber-500/30 text-white font-semibold rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Camera className="w-5 h-5" />
                     Take Photo
@@ -171,14 +202,16 @@ function App() {
                   accept="image/*"
                   onChange={handleFileInputChange}
                   className="hidden"
+                  disabled={isUploading}
                 />
                 <input
                   ref={cameraInputRef}
                   type="file"
                   accept="image/*"
-                  capture="environment"
+                  capture="user"
                   onChange={handleFileInputChange}
                   className="hidden"
+                  disabled={isUploading}
                 />
               </div>
             </div>
@@ -227,39 +260,71 @@ function App() {
               )}
             </div>
 
-            {/* Before/After Display */}
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Before */}
-              <div className="bg-zinc-900/50 rounded-xl p-6 border border-zinc-800">
-                <h3 className="text-lg font-semibold mb-4 text-amber-500">Before</h3>
-                <div className="relative rounded-lg overflow-hidden bg-zinc-800">
-                  <img
-                    src={selectedImage}
-                    alt="Original"
-                    className="w-full h-auto"
-                  />
-                </div>
+            {/* 3D View Toggle */}
+            {resultImage && (
+              <div className="flex justify-center">
+                <button
+                  onClick={() => setIs3DView(!is3DView)}
+                  className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 border border-amber-500/30 text-white font-semibold rounded-lg transition-all flex items-center gap-2"
+                >
+                  <Box className="w-5 h-5" />
+                  {is3DView ? 'Switch to 2D View' : 'Switch to 3D View'}
+                </button>
               </div>
+            )}
+
+            {/* Before/After Display */}
+            <div className={`grid gap-6 ${is3DView ? 'md:grid-cols-1' : 'md:grid-cols-2'}`}>
+              {!is3DView && (
+                <div className="bg-zinc-900/50 rounded-xl p-6 border border-zinc-800">
+                  <h3 className="text-lg font-semibold mb-4 text-amber-500">Before</h3>
+                  <div className="relative rounded-lg overflow-hidden bg-zinc-800">
+                    <img
+                      src={selectedImage}
+                      alt="Original"
+                      className="w-full h-auto"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* After */}
               <div className="bg-zinc-900/50 rounded-xl p-6 border border-zinc-800">
-                <h3 className="text-lg font-semibold mb-4 text-amber-500">After</h3>
-                <div className="relative rounded-lg overflow-hidden bg-zinc-800 aspect-square flex items-center justify-center">
+                <h3 className="text-lg font-semibold mb-4 text-amber-500">
+                  {is3DView ? '3D Interactive View' : 'After'}
+                </h3>
+                <div className={`relative rounded-lg overflow-hidden bg-zinc-800 flex items-center justify-center ${is3DView ? 'aspect-video' : 'aspect-square'}`}>
                   {isProcessing ? (
                     <div className="flex flex-col items-center gap-4">
                       <Loader2 className="w-12 h-12 text-amber-500 animate-spin" />
                       <p className="text-zinc-400">Creating your new look...</p>
                     </div>
                   ) : resultImage ? (
-                    <img
-                      src={resultImage}
-                      alt="Result"
-                      className="w-full h-full object-cover"
-                    />
+                    <div className={`relative w-full h-full ${is3DView ? 'perspective-3d' : ''}`}>
+                      <img
+                        src={resultImage}
+                        alt="Result"
+                        className={`w-full h-full object-cover transition-all duration-700 ${
+                          is3DView ? 'transform-3d hover:scale-110' : ''
+                        }`}
+                        style={is3DView ? {
+                          transform: 'rotateY(0deg)',
+                          transformStyle: 'preserve-3d',
+                        } : undefined}
+                      />
+                      {is3DView && (
+                        <div className="absolute inset-0 pointer-events-none bg-gradient-to-r from-transparent via-white/5 to-transparent animate-shimmer" />
+                      )}
+                    </div>
                   ) : (
                     <p className="text-zinc-500">Select a hairstyle to preview</p>
                   )}
                 </div>
+                {is3DView && resultImage && (
+                  <p className="text-center text-zinc-500 text-sm mt-4">
+                    Hover over the image to interact
+                  </p>
+                )}
               </div>
             </div>
 

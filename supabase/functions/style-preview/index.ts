@@ -18,7 +18,7 @@ const HAIRSTYLE_PROMPTS: Record<string, string> = {
 };
 
 interface RequestBody {
-  image: string;
+  image_url: string;
   hairstyle: string;
 }
 
@@ -49,13 +49,13 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { image, hairstyle }: RequestBody = await req.json();
+    const { image_url, hairstyle }: RequestBody = await req.json();
 
-    if (!image || !hairstyle) {
+    if (!image_url || !hairstyle) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: "Missing image or hairstyle",
+          error: "Missing image_url or hairstyle",
         }),
         {
           status: 400,
@@ -79,7 +79,7 @@ Deno.serve(async (req: Request) => {
       },
       body: JSON.stringify({
         prompt: prompt,
-        image_url: image,
+        image_url: image_url,
         image_size: "square_hd",
         num_inference_steps: 28,
         guidance_scale: 3.5,

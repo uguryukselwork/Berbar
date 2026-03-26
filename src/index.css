@@ -1,3 +1,30 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer utilities {
+  .perspective-3d {
+    perspective: 1000px;
+  }
+
+  .transform-3d {
+    transition: transform 0.7s ease;
+  }
+
+  .transform-3d:hover {
+    transform: rotateY(15deg) rotateX(5deg) scale(1.05);
+  }
+
+  @keyframes shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  .animate-shimmer {
+    animation: shimmer 3s infinite;
+  }
+}

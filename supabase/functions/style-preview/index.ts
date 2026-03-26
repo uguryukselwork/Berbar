@@ -69,9 +69,9 @@ Deno.serve(async (req: Request) => {
 
     const hairstylePrompt = HAIRSTYLE_PROMPTS[hairstyle] || hairstyle;
 
-    const prompt = `A professional portrait photo of a person with ${hairstylePrompt}, maintaining facial features, high quality, well-lit, front facing, realistic, photorealistic, professional barber shop quality`;
+    const prompt = `Professional hairstyle: ${hairstylePrompt}. Keep the exact same face, facial features, skin tone, and identity. Only change the hairstyle. High quality, realistic, professional barber result.`;
 
-    const falResponse = await fetch("https://fal.run/fal-ai/flux-pro/v1.1/redux", {
+    const falResponse = await fetch("https://fal.run/fal-ai/recraft-v3", {
       method: "POST",
       headers: {
         "Authorization": `Key ${FAL_API_KEY}`,
@@ -80,12 +80,9 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         prompt: prompt,
         image_url: image_url,
-        image_size: "square_hd",
-        num_inference_steps: 28,
-        guidance_scale: 3.5,
-        num_images: 1,
-        enable_safety_checker: true,
-        output_format: "jpeg",
+        style: "realistic_image",
+        size: "square_hd",
+        sync_mode: true,
       }),
     });
 

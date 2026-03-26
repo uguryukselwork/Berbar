@@ -22,6 +22,14 @@ interface RequestBody {
   hairstyle: string;
 }
 
+async function fetchImageAsBase64(imageUrl: string): Promise<string> {
+  const response = await fetch(imageUrl);
+  const blob = await response.blob();
+  const arrayBuffer = await blob.arrayBuffer();
+  const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+  return base64;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -31,24 +39,6 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const FAL_API_KEY = Deno.env.get("FAL_API_KEY");
-
-    if (!FAL_API_KEY) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: "FAL_API_KEY not configured",
-        }),
-        {
-          status: 500,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-    }
-
     const { image_url, hairstyle }: RequestBody = await req.json();
 
     if (!image_url || !hairstyle) {
@@ -68,32 +58,35 @@ Deno.serve(async (req: Request) => {
     }
 
     const hairstylePrompt = HAIRSTYLE_PROMPTS[hairstyle] || hairstyle;
+    const prompt = `Transform this person's hairstyle to: ${hairstylePrompt}. Maintain the same face, features, and appearance. Professional haircut, realistic result.`;
 
-    const prompt = `Professional hairstyle: ${hairstylePrompt}. Keep the exact same face, facial features, skin tone, and identity. Only change the hairstyle. High quality, realistic, professional barber result.`;
+    const imageBase64 = await fetchImageAsBase64(image_url);
 
-    const falResponse = await fetch("https://fal.run/fal-ai/recraft-v3", {
-      method: "POST",
-      headers: {
-        "Authorization": `Key ${FAL_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        prompt: prompt,
-        image_url: image_url,
-        style: "realistic_image",
-        size: "square_hd",
-        sync_mode: true,
-      }),
-    });
+    const hfResponse = await fetch(
+      "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          inputs: prompt,
+          parameters: {
+            negative_prompt: "blurry, low quality, distorted face, different person",
+            num_inference_steps: 30,
+          },
+        }),
+      }
+    );
 
-    if (!falResponse.ok) {
-      const errorData = await falResponse.text();
-      console.error("FAL API Error:", errorData);
+    if (!hfResponse.ok) {
+      const errorText = await hfResponse.text();
+      console.error("Hugging Face API Error:", errorText);
 
       return new Response(
         JSON.stringify({
           success: false,
-          error: "Failed to process image with AI",
+          error: "AI processing failed. Please try again in a moment.",
         }),
         {
           status: 500,
@@ -105,30 +98,16 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const result = await falResponse.json();
-
-    const imageUrl = result.images?.[0]?.url || result.image?.url;
-
-    if (!imageUrl) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: "No image generated",
-        }),
-        {
-          status: 500,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-    }
+    const imageBlob = await hfResponse.blob();
+    const imageArrayBuffer = await imageBlob.arrayBuffer();
+    const imageBase64Result = btoa(
+      String.fromCharCode(...new Uint8Array(imageArrayBuffer))
+    );
 
     return new Response(
       JSON.stringify({
         success: true,
-        image_url: imageUrl,
+        image_url: `data:image/jpeg;base64,${imageBase64Result}`,
       }),
       {
         status: 200,

@@ -22,14 +22,6 @@ interface RequestBody {
   hairstyle: string;
 }
 
-async function fetchImageAsBase64(imageUrl: string): Promise<string> {
-  const response = await fetch(imageUrl);
-  const blob = await response.blob();
-  const arrayBuffer = await blob.arrayBuffer();
-  const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-  return base64;
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -59,8 +51,6 @@ Deno.serve(async (req: Request) => {
 
     const hairstylePrompt = HAIRSTYLE_PROMPTS[hairstyle] || hairstyle;
     const prompt = `Transform this person's hairstyle to: ${hairstylePrompt}. Maintain the same face, features, and appearance. Professional haircut, realistic result.`;
-
-    const imageBase64 = await fetchImageAsBase64(image_url);
 
     const hfResponse = await fetch(
       "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5",
